@@ -10,6 +10,34 @@
 
 #include "experimental.h"
 
+void CustomRenderCommand(const Clay_RenderCommand const *command)
+{
+    Clay_BoundingBox boundingBox = {roundf(renderCommand->boundingBox.x), roundf(renderCommand->boundingBox.y), roundf(renderCommand->boundingBox.width), roundf(renderCommand->boundingBox.height)};
+    CustomClayElement *customElement = reinterpret_cast<CustomClayElement*>(command->renderData.custom.customData);
+    if (!customElement) continue;
+
+    switch((uint32_t)customElement->type) 
+    {
+        case CustomClayElementType::WORKBENCH_CANVAS: 
+            reinterpret_cast<Canvas*>(customElement->dataAddress)->Render(boundingBox);
+            break;
+        default:
+            printf("invalid custom render command\n");
+        break;
+    }
+    break;
+}
+
+
+typedef void (*CustomRenderHook)(const Clay_RenderCommand const *command);
+
+static CustomRenderHook custom_render_function;
+
+void SetCustomRenderHook(CustomRenderHook function_ptr)
+{
+    custom_render_function = function_ptr;   
+}
+
 // Get a ray trace from the screen position (i.e mouse) within a specific section of the screen
 Ray GetScreenToWorldPointWithZDistance(Vector2 position, Camera3D camera, int screenWidth, int screenHeight, float zDistance)
 {
@@ -218,27 +246,10 @@ void Clay_Raylib_Render_Experimental(Clay_RenderCommandArray renderCommands, Fon
             }
             case CLAY_RENDER_COMMAND_TYPE_CUSTOM: 
             {
-
-
-                // if(CustomRenderHook != null)
-                // {
-                //     CustomRenderHook(renderCommand);
-                // }
-
-                CustomClayElement *customElement = reinterpret_cast<CustomClayElement*>(renderCommand->renderData.custom.customData);
-                if (!customElement) continue;
-
-                // printf("Custom Type: %d\n", customElement->type);
-                switch((uint32_t)customElement->type) 
+                if(custom_render_function != nullptr)
                 {
-                    case CustomClayElementType::WORKBENCH_CANVAS: 
-                        reinterpret_cast<Canvas*>(customElement->dataAddress)->Render(boundingBox);
-                        break;
-                    default:
-                        printf("invalid custom render command\n");
-                    break;
+                    CustomRenderHook(renderCommand);
                 }
-                break;
             }
             default: {
                 printf("Error: unhandled render command.");
@@ -247,3 +258,5 @@ void Clay_Raylib_Render_Experimental(Clay_RenderCommandArray renderCommands, Fon
         }
     }
 }
+
+
