@@ -166,7 +166,7 @@ void Clay_Raylib_Render_Experimental(Clay_RenderCommandArray renderCommands, Fon
                 }
                 DrawTexturePro(
                     imageTexture,
-                    (Rectangle) { 0, 0, (int)imageTexture.width, (int)imageTexture.height },
+                    (Rectangle) { 0, 0, (float)imageTexture.width, (float)imageTexture.height },
                     (Rectangle){boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height},
                     (Vector2) {},
                     0,
