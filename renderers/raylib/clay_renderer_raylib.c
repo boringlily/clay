@@ -1,7 +1,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "stdint.h"
-#include "cstring.h"
+#include "cstring"
 #include "stdio.h"
 #include "stdlib.h"
 
