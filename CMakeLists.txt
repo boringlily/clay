@@ -32,6 +32,7 @@ endif ()
 
 if(CLAY_INCLUDE_ALL_EXAMPLES OR CLAY_INCLUDE_RAYLIB_EXAMPLES)
   add_subdirectory("examples/raylib-multi-context")
+  add_subdirectory("examples/raylib-custom-render-commands")
   add_subdirectory("examples/raylib-sidebar-scrolling-container")
 endif ()
 if(CLAY_INCLUDE_ALL_EXAMPLES OR CLAY_INCLUDE_SDL2_EXAMPLES)

@@ -1,129 +1,37 @@
+#include "stdio.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "stdint.h"
 #include "string.h"
-#include "stdio.h"
 #include "stdlib.h"
 
-#define CLAY_RECTANGLE_TO_RAYLIB_RECTANGLE(rectangle) (Rectangle) { .x = rectangle.x, .y = rectangle.y, .width = rectangle.width, .height = rectangle.height }
-#define CLAY_COLOR_TO_RAYLIB_COLOR(color) (Color) { .r = (unsigned char)roundf(color.r), .g = (unsigned char)roundf(color.g), .b = (unsigned char)roundf(color.b), .a = (unsigned char)roundf(color.a) }
+#define CLAY_IMPLEMENTATION
+#include "../../clay.h"
+#include "../../renderers/raylib/clay_renderer_raylib.c"
 
-// Get a ray trace from the screen position (i.e mouse) within a specific section of the screen
-Ray GetScreenToWorldPointWithZDistance(Vector2 position, Camera camera, int screenWidth, int screenHeight, float zDistance)
+Camera render_texture_camera;
+Camera render_defered_camera;
+Camera render_model_camera;
+
+typedef struct
 {
-    Ray ray = { 0 };
+    Model model;
+    float scale;
+    Vector3 position;
+    Matrix rotation;
+} CustomLayoutElement_3DModel;
 
-    // Calculate normalized device coordinates
-    // NOTE: y value is negative
-    float x = (2.0f*position.x)/(float)screenWidth - 1.0f;
-    float y = 1.0f - (2.0f*position.y)/(float)screenHeight;
-    float z = 1.0f;
-
-    // Store values in a vector
-    Vector3 deviceCoords = { x, y, z };
-
-    // Calculate view matrix from camera look at
-    Matrix matView = MatrixLookAt(camera.position, camera.target, camera.up);
-
-    Matrix matProj = MatrixIdentity();
-
-    if (camera.projection == CAMERA_PERSPECTIVE)
-    {
-        // Calculate projection matrix from perspective
-        matProj = MatrixPerspective(camera.fovy*DEG2RAD, ((double)screenWidth/(double)screenHeight), 0.01f, zDistance);
-    }
-    else if (camera.projection == CAMERA_ORTHOGRAPHIC)
-    {
-        double aspect = (double)screenWidth/(double)screenHeight;
-        double top = camera.fovy/2.0;
-        double right = top*aspect;
-
-        // Calculate projection matrix from orthographic
-        matProj = MatrixOrtho(-right, right, -top, top, 0.01, 1000.0);
-    }
-
-    // Unproject far/near points
-    Vector3 nearPoint = Vector3Unproject((Vector3){ deviceCoords.x, deviceCoords.y, 0.0f }, matProj, matView);
-    Vector3 farPoint = Vector3Unproject((Vector3){ deviceCoords.x, deviceCoords.y, 1.0f }, matProj, matView);
-
-    // Calculate normalized direction vector
-    Vector3 direction = Vector3Normalize(Vector3Subtract(farPoint, nearPoint));
-
-    ray.position = farPoint;
-
-    // Apply calculated vectors to ray
-    ray.direction = direction;
-
-    return ray;
-}
-
-static inline Clay_Dimensions Raylib_MeasureText(Clay_StringSlice text, Clay_TextElementConfig *config, void *userData) {
-    // Measure string size for Font
-    Clay_Dimensions textSize = { 0 };
-
-    float maxTextWidth = 0.0f;
-    float lineTextWidth = 0;
-    int maxLineCharCount = 0;
-    int lineCharCount = 0;
-
-    float textHeight = config->fontSize;
-    Font* fonts = (Font*)userData;
-    Font fontToUse = fonts[config->fontId];
-    // Font failed to load, likely the fonts are in the wrong place relative to the execution dir.
-    // RayLib ships with a default font, so we can continue with that built in one. 
-    if (!fontToUse.glyphs) {
-        fontToUse = GetFontDefault();
-    }
-
-    float scaleFactor = config->fontSize/(float)fontToUse.baseSize;
-
-    for (int i = 0; i < text.length; ++i, lineCharCount++)
-    {
-        if (text.chars[i] == '\n') {
-            maxTextWidth = fmax(maxTextWidth, lineTextWidth);
-            maxLineCharCount = CLAY__MAX(maxLineCharCount, lineCharCount);
-            lineTextWidth = 0;
-            lineCharCount = 0;
-            continue;
-        }
-        int index = text.chars[i] - 32;
-        if (fontToUse.glyphs[index].advanceX != 0) lineTextWidth += fontToUse.glyphs[index].advanceX;
-        else lineTextWidth += (fontToUse.recs[index].width + fontToUse.glyphs[index].offsetX);
-    }
-
-    maxTextWidth = fmax(maxTextWidth, lineTextWidth);
-    maxLineCharCount = CLAY__MAX(maxLineCharCount, lineCharCount);
-
-    textSize.width = maxTextWidth * scaleFactor + (lineCharCount * config->letterSpacing);
-    textSize.height = textHeight;
-
-    return textSize;
-}
-
-void Clay_Raylib_Initialize(int width, int height, const char *title, unsigned int flags) {
-    SetConfigFlags(flags);
-    InitWindow(width, height, title);
-//    EnableEventWaiting();
-}
-
-// A MALLOC'd buffer, that we keep modifying inorder to save from so many Malloc and Free Calls.
-// Call Clay_Raylib_Close() to free
-static char *temp_render_buffer = NULL;
-static int temp_render_buffer_len = 0;
-
-// Call after closing the window to clean up the render buffer
-void Clay_Raylib_Close()
+typedef enum ClayCustomCommands 
 {
-    if(temp_render_buffer) free(temp_render_buffer);
-    temp_render_buffer_len = 0;
+    ClayCustom_DrawRenderTexture,
+    ClayCustom_DeferedRender,
+    ClayCustom_Draw3DModel
+} ClayCustomCommands;
 
-    CloseWindow();
-}
-
-
-void Clay_Raylib_Render(Clay_RenderCommandArray renderCommands, Font* fonts)
+void Custom_Raylib_Render(Clay_RenderCommandArray renderCommands, Font* fonts) 
 {
-    for (int j = 0; j < renderCommands.length; j++)
+
+ for (int j = 0; j < renderCommands.length; j++)
     {
         Clay_RenderCommand *renderCommand = Clay_RenderCommandArray_Get(&renderCommands, j);
         Clay_BoundingBox boundingBox = {roundf(renderCommand->boundingBox.x), roundf(renderCommand->boundingBox.y), roundf(renderCommand->boundingBox.width), roundf(renderCommand->boundingBox.height)};
@@ -215,8 +123,51 @@ void Clay_Raylib_Render(Clay_RenderCommandArray renderCommands, Font* fonts)
                 break;
             }
             case CLAY_RENDER_COMMAND_TYPE_CUSTOM: {
-                // This is where you add your custom render logic;
-                break;
+            Clay_CustomRenderData commandData = renderCommand->renderData.custom;
+
+            switch (commandData.customCommandId) {
+            case ClayCustom_DrawRenderTexture:
+            {
+                RenderTexture renderTexture = *(RenderTexture*)(commandData.customData);
+
+                DrawTexturePro(
+                    renderTexture.texture,
+                    (Rectangle) { 0, 0, (float)renderTexture.texture.width, (float)-renderTexture.texture.height },
+                    (Rectangle) { boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height },
+                    (Vector2) {},
+                    0,
+                    (Color){ 255, 255, 255, 255 });
+            }
+
+            break;
+            
+            case ClayCustom_Draw3DModel:
+            { 
+                CustomLayoutElement_3DModel *customElement = (CustomLayoutElement_3DModel *)commandData.customData;
+                if (!customElement) break;
+
+                // Set up 3D mode
+                BeginMode3D(render_model_camera);
+
+                // Draw the 3D model
+                DrawModel(customElement->model, customElement->position, customElement->scale, WHITE);
+
+                // End 3D mode
+                EndMode3D();
+            }
+            break;
+            
+            case ClayCustom_DeferedRender:
+            {
+
+            }
+            break;
+            
+            default: 
+                printf("OOPs, custom command ID not handled.");
+            }
+
+            break;
             }
             default: {
                 printf("Error: unhandled render command.");
